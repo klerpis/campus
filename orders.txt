@@ -1,0 +1,222 @@
+path('orders/', OrderListCreateView.as_view(), name='order'),
+
+class OrderListCreateView(generics.ListCreateAPIView):
+    serializer_class = OrderSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if hasattr(user, 'student') and user.student.exists():
+            # Student sees their placed orders
+            student = Student.objects.filter(user=user).first()
+            return Order.objects.filter(student=student)
+
+        elif hasattr(user, 'vendor') and user.vendor.exists():
+            # Vendor sees orders placed to their store
+            # store = getattr(user.vendor, 'store', None)
+            store = Vendor.objects.filter(user=user).first().store
+            if store:
+                return Order.objects.filter(store=store)
+        return Order.objects.none()  # fallback
+
+    def perform_create(self, serializer):
+        user = self.request.user
+
+        if not hasattr(user, 'student') or (hasattr(user, 'student') and not user.student.exists()):
+            raise PermissionDenied(
+                "Only students can place orders.")
+
+        order = serializer.save(student=user.student)
+        # Create Sale and Log for each item
+        for item in order.items.all():
+            sale = Sale.objects.create(
+                product=item.product,
+                quantity=item.quantity,
+                total_price=item.unit_price * item.quantity,
+                store=order.store
+            )
+            SaleLog.objects.create(
+                sale=sale,
+                action='created',
+                performed_by=user
+            )
+
+        # Compose Order Summary
+        item_lines = [
+            f"{item.product.product_name} × {item.quantity} = ₦{item.unit_price * item.quantity}"
+            for item in order.items.all()
+        ]
+
+        body = "\n".join([
+            f"Hello {order.student.first_name},",
+            f"Your order #{order.id} has been received.",
+            f"Scheduled Delivery: {order.delivery_date if order.delivery_date else 'Not specified'}",
+            "",
+            "Order Summary:",
+            *item_lines,
+            "",
+            "Thank you for shopping with us!"
+        ])
+
+        send_mail(
+            subject=f"Order Confirmation - #{order.id}",
+            message=body,
+            from_email=None,
+            recipient_list=[order.student.email],
+            fail_silently=True
+        )
+
+        # Notify Vendor
+        store = order.store
+        vendor_user = store.vendor.user
+
+        vendor_message = "\n".join([
+            f"Hello {store.vendor.first_name},",
+            f"You have received a new order #{order.id} in your store: {store.store_name}.",
+            f"Scheduled Delivery: {order.delivery_date if order.delivery_date else 'Not specified'}",
+            "",
+            "Order Summary:",
+            *item_lines,
+            "",
+            "Please prepare the order for delivery.",
+        ])
+
+        send_mail(
+            subject=f"New Order Alert - #{order.id}",
+            message=vendor_message,
+            from_email=None,
+            recipient_list=[vendor_user.email],
+            fail_silently=True
+        )
+
+
+
+
+import React, { useEffect, useState } from 'react';
+import {
+  Box, Typography, Card, CardContent, Grid, 
+  CircularProgress, Chip, Divider, Button
+} from '@mui/material';
+import axios from '../../api/axios';
+import { useSnackbar } from '../../context/SnackbarProvider';
+
+
+
+const statusColors = {
+  pending: 'warning',
+  confirmed: 'info',
+  delivered: 'success',
+  cancelled: 'error'
+};
+
+const VendorOrders = () => {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const { showSnackbar } = useSnackbar();
+  
+  const fetchOrders = async () => {
+    try {
+      const res = await axios.get('/orders/orders/');
+      setOrders(res.data.results);
+    } catch {
+      showSnackbar('Failed to fetch vendor orders!', 'warning');
+      // alert('Failed to fetch vendor orders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const updateStatus = async (orderId, currentStatus) => {
+  const nextStatus = getNextStatus(currentStatus);
+  if (!nextStatus) return;
+
+  try {
+    await axios.patch(`/orders/orders/${orderId}/`, {
+      status: nextStatus
+    });
+    fetchOrders();
+  } catch {
+    // alert('Failed to update status');
+    showSnackbar('Failed to update status!', 'error');
+  }
+};
+
+const getNextStatus = (status) => {
+  if (status === 'pending') return 'confirmed';
+  if (status === 'confirmed') return 'delivered';
+  return null; // no further update allowed
+};
+
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  if (loading) return (
+    <Box textAlign="center" mt={4}><CircularProgress /></Box>
+  );
+  console.log("orders", orders)
+
+  return (
+    <Box>
+      <Typography variant="h4" gutterBottom>Orders Received</Typography>
+
+      {orders.length === 0 ? (
+        <Typography mt={3}>No orders yet.</Typography>
+      ) : (
+        orders.map(order => (
+          <Card key={order.id} sx={{ mb: 3 }}>
+            <CardContent>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                <Typography variant="h6">Order #{order.id}</Typography>
+                <Box display="flex" alignItems="center" gap={2}>
+                    <Chip label={order.status} color={statusColors[order.status] || 'default'} />
+                    {getNextStatus(order.status) && (
+                        <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => updateStatus(order.id, order.status)}
+                        >
+                        Mark as {getNextStatus(order.status)}
+                        </Button>
+                    )}
+                </Box>
+
+              
+              </Box>
+
+              <Typography variant="body2" color="text.secondary" mb={1}>
+                Delivery: {order.delivery_date || 'N/A'}
+              </Typography>
+              <Typography variant="body2">
+                Buyer: {order.student?.user?.username || 'Unknown'}
+              </Typography>
+
+              <Divider sx={{ my: 2 }} />
+
+              <Grid container spacing={2}>
+                {order.items.map(item => (
+                  <Grid item xs={12} sm={6} md={4} key={item.id}>
+                    <Typography variant="subtitle2">{item.product.product_name}</Typography>
+                    <Typography variant="body2">
+                      Qty: {item.quantity} | ₦{item.unit_price}
+                    </Typography>
+                  </Grid>
+                ))}
+              </Grid>
+
+              <Divider sx={{ mt: 2, mb: 1 }} />
+              <Typography variant="subtitle1">
+                Total: ₦{order.items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0)}
+              </Typography>
+            </CardContent>
+          </Card>
+        ))
+      )}
+    </Box>
+  );
+};
+
+export default VendorOrders;
