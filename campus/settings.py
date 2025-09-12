@@ -29,7 +29,7 @@ SECRET_KEY = 'django-insecure-3av152x6f2e01dj_90lf93v6nzz1g+$45w(glgrwse^a9-x3$2
 DEBUG = False
 # DEBUG = True
 
-ALLOWED_HOSTS = ['shopatunicross.pythonanywhere.com', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['shopatunicross.onrender.com', 'localhost', '127.0.0.1']
 # ALLOWED_HOSTS = []
 
 
@@ -121,7 +121,8 @@ CORS_ALLOWED_ORIGINS = [
     'http://127.0.0.1:8000',
     'http://127.0.0.1:3000',
     'http://localhost:3000',
-    'https://shopatunicross.pythonanywhere.com',
+    # 'https://shopatunicross.pythonanywhere.com',
+    'https://shopatunicross.onrender.com',
     # 'http://127.0.0.1:8000'
 ]
 # CORS_ALLOW_CREDENTIALS = True
