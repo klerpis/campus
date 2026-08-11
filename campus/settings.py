@@ -15,6 +15,23 @@ from pathlib import Path
 
 import os
 
+import dj_database_url
+
+if not os.getenv("RENDER"):
+    from dotenv import load_dotenv
+    load_dotenv()
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+print()
+print()
+print()
+print(f"DEBUG: Using database URL: {os.environ.get('EXTERNAL_DATABASE_URL')}")
+print()
+print()
+print()
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -24,7 +41,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-3av152x6f2e01dj_90lf93v6nzz1g+$45w(glgrwse^a9-x3$2'
-
+SECRET_KEY = os.environ.get('SECRET_KEY', default=SECRET_KEY)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 # DEBUG = True
